@@ -17,6 +17,9 @@ USI プロトコルに対応している。[将棋所](http://shogidokoro.starfr
 [ShogiGUI](http://shogigui.siganus.com/) で `target/release/naitou.exe` をエン
 ジンとして登録する。
 
+原作では平手の場合、時間制限の有無により異なる定跡が使われる。これはエンジン設
+定の "timelimit" から設定できる。
+
 ## Note
 
 完全移植ではない。現状把握している相違点は以下の通り:
