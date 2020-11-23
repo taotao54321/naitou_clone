@@ -8,6 +8,9 @@ $ cd naitou_clone
 $ cargo build --release
 ```
 
+エミュレータを用いた verifier もビルドする際は、cargo に `--features=emu` オプ
+ションを与える。ただしこれに関しては Linux 以外ではビルド確認していない。
+
 ## Usage
 
 USI プロトコルに対応している。[将棋所](http://shogidokoro.starfree.jp/) や
