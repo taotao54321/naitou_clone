@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+
+"""定跡データを Rust コードに変換する
+
+Usage:
+
+    $ book naitou.nes
+"""
+
+import argparse
+from dataclasses import dataclass
+import sys
+from typing import BinaryIO, Iterator, Union
+
+
+# ---------------------------------------------------------------------
+# util
+# ---------------------------------------------------------------------
+
+
+def subseq(seq, off: int, len_: int):
+    return seq[off : off + len_]
+
+
+def ensure(cond: bool, err: Union[str, Exception]):
+    if cond:
+        return
+
+    if isinstance(err, str):
+        err = RuntimeError(err)
+    raise err
+
+
+def arg_open_rb(s: str) -> BinaryIO:
+    """argparse.FileType がバイナリ標準入力を扱えない問題の workaround
+
+    ref: https://bugs.python.org/issue14156
+    """
+    if s == "-":
+        return sys.stdin.buffer
+
+    try:
+        return open(s, "rb")
+    except OSError as e:
+        raise argparse.ArgumentTypeError(f"can't open {s}: {e}")
+
+
+# --------------------------------------------------------------------
+# game
+# --------------------------------------------------------------------
+
+
+def prg_offset(addr: int) -> int:
+    return addr - 0xC000
+
+
+@dataclass
+class BookBranchMove:
+    dst_your: int
+    pt_your: int
+    src_my: int
+    dst_my: int
+
+
+@dataclass
+class BookBranchChange:
+    dst_your: int
+    pt_your: int
+    formation: int
+    ply: int
+
+
+@dataclass
+class BookMovesEntry:
+    src_my: int
+    dst_my: int
+
+
+def read_book_branch(
+    prg: bytes, off: int
+) -> Iterator[Union[BookBranchMove, BookBranchChange]]:
+    def rd():
+        nonlocal off
+        b = prg[off]
+        off += 1
+        return b
+
+    while True:
+        ty = rd()
+        if ty == 0:
+            break
+
+        if ty == 1:
+            dst_your = rd()
+            pt_your = rd()
+            src_my = rd()
+            dst_my = rd()
+            yield BookBranchMove(dst_your, pt_your, src_my, dst_my)
+        elif ty == 2:
+            dst_your = rd()
+            pt_your = rd()
+            formation = rd()
+            ply = rd()
+            yield BookBranchChange(dst_your, pt_your, formation, ply)
+        else:
+            assert False
+
+
+def read_book_moves(prg: bytes, off: int) -> Iterator[BookMovesEntry]:
+    def rd():
+        nonlocal off
+        b = prg[off]
+        off += 1
+        return b
+
+    while True:
+        src_my = rd()
+        if src_my == 0:
+            break
+
+        dst_my = rd()
+        yield BookMovesEntry(src_my, dst_my)
+
+
+def sq_str(sq: int) -> str:
+    y, x = divmod(sq, 11)
+    return f"Sq::from_xy({x}, {y})"
+
+
+def pt_str(pt: int) -> str:
+    DICT = {
+        1: "Piece::King",
+        2: "Piece::Rook",
+        3: "Piece::Bishop",
+        4: "Piece::Gold",
+        5: "Piece::Silver",
+        6: "Piece::Knight",
+        7: "Piece::Lance",
+        8: "Piece::Pawn",
+        9: "Piece::Dragon",
+        10: "Piece::Horse",
+        12: "Piece::ProSilver",
+        13: "Piece::ProKnight",
+        14: "Piece::ProLance",
+        15: "Piece::ProPawn",
+    }
+    return DICT[pt]
+
+
+def formation_str(formation: int) -> str:
+    DICT = {
+        0: "Formation::Nakabisha",
+        1: "Formation::Sikenbisha",
+        3: "Formation::Kakugawari",
+        4: "Formation::Sujichigai",
+        6: "Formation::YourHishaochi",
+        7: "Formation::YourNimaiochi",
+        8: "Formation::MyHishaochi",
+        9: "Formation::MyNimaiochi",
+        99: "Formation::Nothing",
+    }
+    return DICT[formation]
+
+
+def conv_book_branch(prg: bytes, addr: int, name: str):
+    off = prg_offset(addr)
+
+    print(f"const {name}: &[BookBranchEntry] = &[")
+
+    for e in read_book_branch(prg, off):
+        if isinstance(e, BookBranchMove):
+            print(
+                "    BookBranchEntry::new_move({}, {}, {}, {}),".format(
+                    sq_str(e.dst_your),
+                    pt_str(e.pt_your),
+                    sq_str(e.src_my),
+                    sq_str(e.dst_my),
+                )
+            )
+        elif isinstance(e, BookBranchChange):
+            print(
+                "    BookBranchEntry::new_change({}, {}, {}, {}),".format(
+                    sq_str(e.dst_your),
+                    pt_str(e.pt_your),
+                    formation_str(e.formation),
+                    e.ply,
+                )
+            )
+        else:
+            assert False
+
+    print("];")
+    print()
+
+
+def conv_book_moves(prg: bytes, addr: int, name: str):
+    off = prg_offset(addr)
+
+    print(f"const {name}: &[BookMovesEntry] = &[")
+
+    for e in read_book_moves(prg, off):
+        print(
+            "    BookMovesEntry::new({}, {}),".format(
+                sq_str(e.src_my), sq_str(e.dst_my)
+            )
+        )
+
+    print("];")
+    print()
+
+
+def conv(prg: bytes):
+    conv_book_branch(prg, 0xD7B1, "BRANCH_NAKABISHA")
+    conv_book_branch(prg, 0xD7E4, "BRANCH_SIKENBISHA")
+    conv_book_branch(prg, 0xD818, "BRANCH_KAKUGAWARI")
+    conv_book_branch(prg, 0xD828, "BRANCH_SUJICHIGAI")
+    conv_book_branch(prg, 0xD834, "BRANCH_YOUR_HISHAOCHI")
+    conv_book_branch(prg, 0xD849, "BRANCH_YOUR_NIMAIOCHI")
+    conv_book_branch(prg, 0xD84F, "BRANCH_MY_HISHAOCHI")
+    conv_book_branch(prg, 0xD85F, "BRANCH_MY_NIMAIOCHI")
+
+    conv_book_moves(prg, 0xD874, "MOVES_NAKABISHA")
+    conv_book_moves(prg, 0xD89B, "MOVES_SIKENBISHA")
+    conv_book_moves(prg, 0xD8BF, "MOVES_KAKUGAWARI")
+    conv_book_moves(prg, 0xD8E8, "MOVES_SUJICHIGAI")
+    conv_book_moves(prg, 0xD90E, "MOVES_YOUR_HISHAOCHI")
+    conv_book_moves(prg, 0xD931, "MOVES_YOUR_NIMAIOCHI")
+    conv_book_moves(prg, 0xD958, "MOVES_MY_HISHAOCHI")
+    conv_book_moves(prg, 0xD979, "MOVES_MY_NIMAIOCHI")
+
+
+def arg_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("in_", type=arg_open_rb, nargs="?", default="-", metavar="INFILE")
+    return ap
+
+
+def main():
+    args = arg_parser().parse_args()
+
+    with args.in_:
+        prg = subseq(args.in_.read(), 16, 0x4000)
+    ensure(len(prg) == 0x4000, "incomplete PRG")
+
+    conv(prg)
+
+
+if __name__ == "__main__":
+    main()

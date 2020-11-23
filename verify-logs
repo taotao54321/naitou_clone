@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import subprocess
+from typing import Iterator
+
+
+def verify_ok(log: Path) -> bool:
+    PATH_ROM = Path("naitou.nes")
+
+    cmdline = ("cargo", "run", "--release", "--bin", "verify", PATH_ROM, "record", log)
+
+    proc = subprocess.run(
+        cmdline, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    return proc.returncode == 0
+
+
+def logs() -> Iterator[Path]:
+    DIR = Path("log/")
+
+    return DIR.glob("*.record")
+
+
+def main():
+    for log in logs():
+        if not verify_ok(log):
+            print(log)
+
+
+if __name__ == "__main__":
+    main()

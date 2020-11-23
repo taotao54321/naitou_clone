@@ -1,0 +1,40 @@
+[package]
+name = "naitou_clone"
+version = "0.1.0"
+authors = ["taotao54321 <taotao54321@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+array-init = "1.0"
+arrayvec = "0.5"
+boolinator = "2.4"
+chrono = "0.4"
+either = "1.6"
+eyre = "0.6"
+itertools = "0.9"
+num-traits = "0.2"
+once_cell = "1.5"
+rand = "0.7"
+rayon = "1.5"
+structopt = "0.3"
+strum = "0.19"
+strum_macros = "0.19"
+thiserror = "1.0"
+
+sdl2 = { version = "0.34", optional = true }
+fceux = { path = "fceux-rs", optional = true }
+
+[features]
+emu = [ "sdl2", "fceux" ]
+
+[[bin]]
+name = "play_record"
+required-features = [ "emu" ]
+
+[[bin]]
+name = "traveller_test"
+required-features = [ "emu" ]
+
+[[bin]]
+name = "verify"
+required-features = [ "emu" ]
